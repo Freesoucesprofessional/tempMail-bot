@@ -62,18 +62,24 @@ async function getToken(address, password) {
   return res.json();
 }
 
+async function safeJson(res) {
+  const text = await res.text();
+  if (!text || text.trim() === "") return null;
+  try { return JSON.parse(text); } catch (e) { return null; }
+}
+
 async function getMessages(token) {
   const res = await fetch(`${MAILTM}/messages?page=1`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  return res.json();
+  return safeJson(res);
 }
 
 async function getMessage(token, id) {
   const res = await fetch(`${MAILTM}/messages/${id}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  return res.json();
+  return safeJson(res);
 }
 
 async function deleteAccount(token, accountId) {
@@ -227,6 +233,12 @@ bot.onText(/\/inbox/, async (msg) => {
 
   try {
     const data = await getMessages(sessions[chatId].token);
+
+    if (!data || !data["hydra:member"]) {
+      await bot.sendMessage(chatId, "⚠️ Could not reach mail server. Please try /inbox again in a moment.");
+      return;
+    }
+
     const messages = data["hydra:member"];
 
     if (!messages || messages.length === 0) {
@@ -276,6 +288,11 @@ bot.onText(/\/read_(\d+)/, async (msg, match) => {
   try {
     const msgId = sessions[chatId].messages[index].id;
     const full = await getMessage(sessions[chatId].token, msgId);
+
+    if (!full) {
+      await bot.sendMessage(chatId, "⚠️ Could not fetch email. Please try again.");
+      return;
+    }
 
     // Fix: full.html can be array of objects like [{type, value}]
     let rawBody = "";
