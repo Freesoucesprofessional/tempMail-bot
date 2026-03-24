@@ -1,7 +1,7 @@
 const TelegramBot = require("node-telegram-bot-api");
 const fetch = require("node-fetch");
 
-const BOT_TOKEN = process.env.BOT_TOKEN || "7870202451:AAHQwFxeZsd5Z8dDdjHP4v-O01WqYB8hraI";
+const BOT_TOKEN = process.env.BOT_TOKEN;
 const MAILTM = "https://api.mail.tm";
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
@@ -62,18 +62,24 @@ async function getToken(address, password) {
   return res.json();
 }
 
+async function safeJson(res) {
+  const text = await res.text();
+  if (!text || text.trim() === "") return null;
+  try { return JSON.parse(text); } catch (e) { return null; }
+}
+
 async function getMessages(token) {
   const res = await fetch(`${MAILTM}/messages?page=1`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  return res.json();
+  return safeJson(res);
 }
 
 async function getMessage(token, id) {
   const res = await fetch(`${MAILTM}/messages/${id}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  return res.json();
+  return safeJson(res);
 }
 
 async function deleteAccount(token, accountId) {
@@ -139,14 +145,31 @@ bot.onText(/\/newmail/, async (msg) => {
 
   try {
     const domain = await getDomain();
-    const username = randomString(10);
-    const address = `${username}@${domain}`;
-    const password = randomString(16);
 
-    const account = await createAccount(address, password);
+    // Retry up to 3 times in case of duplicate username or empty response
+    let account, address, password;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const username = randomString(12);
+      address = `${username}@${domain}`;
+      password = randomString(16);
 
-    if (!account.id) {
-      await bot.sendMessage(chatId, "❌ Failed to create email. Please try again with /newmail.");
+      try {
+        const res = await fetch(`${MAILTM}/accounts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address, password }),
+        });
+        const text = await res.text();
+        if (!text) continue; // empty response, retry
+        account = JSON.parse(text);
+        if (account.id) break; // success
+      } catch (e) {
+        if (attempt === 2) throw e;
+      }
+    }
+
+    if (!account || !account.id) {
+      await bot.sendMessage(chatId, "❌ Failed to create email after 3 attempts. Please try again with /newmail.");
       return;
     }
 
@@ -210,6 +233,12 @@ bot.onText(/\/inbox/, async (msg) => {
 
   try {
     const data = await getMessages(sessions[chatId].token);
+
+    if (!data || !data["hydra:member"]) {
+      await bot.sendMessage(chatId, "⚠️ Could not reach mail server. Please try /inbox again in a moment.");
+      return;
+    }
+
     const messages = data["hydra:member"];
 
     if (!messages || messages.length === 0) {
@@ -259,6 +288,11 @@ bot.onText(/\/read_(\d+)/, async (msg, match) => {
   try {
     const msgId = sessions[chatId].messages[index].id;
     const full = await getMessage(sessions[chatId].token, msgId);
+
+    if (!full) {
+      await bot.sendMessage(chatId, "⚠️ Could not fetch email. Please try again.");
+      return;
+    }
 
     // Fix: full.html can be array of objects like [{type, value}]
     let rawBody = "";
