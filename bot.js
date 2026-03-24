@@ -256,7 +256,9 @@ bot.onText(/\/inbox/, async (msg) => {
       messages.map((m, i) =>
         `*${i + 1}.* 📩 From: \`${m.from.address}\`\n` +
         `    📌 Subject: ${escapeMarkdown(m.subject || "(No subject)")}\n` +
-        `    🕐 ${new Date(m.createdAt).toLocaleString()}`
+        `    🕐 ${new Date(m.createdAt).toLocaleString("en-IN", {
+          timeZone: "Asia/Kolkata"
+        })}`
       ).join("\n\n") +
       `\n\nReply with /read\\_1, /read\\_2 etc. to read a message`,
       { parse_mode: "Markdown" }
@@ -302,8 +304,8 @@ bot.onText(/\/read_(\d+)/, async (msg, match) => {
       const htmlStr = Array.isArray(full.html)
         ? full.html.map(h => (typeof h === "string" ? h : h.value || "")).join(" ")
         : typeof full.html === "string"
-        ? full.html
-        : "";
+          ? full.html
+          : "";
       rawBody = stripHtml(htmlStr).substring(0, 4000);
     } else {
       rawBody = "(Empty message)";
@@ -321,7 +323,9 @@ bot.onText(/\/read_(\d+)/, async (msg, match) => {
       `📩 *Email #${index + 1}*\n\n` +
       `*From:* \`${full.from.address}\`\n` +
       `*Subject:* ${safeSubject}\n` +
-      `*Date:* ${new Date(full.createdAt).toLocaleString()}` +
+      `*Date:* ${new Date(full.createdAt).toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata"
+      })}` +
       otpLine,
       { parse_mode: "Markdown" }
     );
